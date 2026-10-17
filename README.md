@@ -1,65 +1,160 @@
-# Example Voting App
+# Voting App — DevOps Capstone
 
-A simple distributed application running across multiple Docker containers.
-
-## Getting started
-
-Download [Docker Desktop](https://www.docker.com/products/docker-desktop) for Mac or Windows. [Docker Compose](https://docs.docker.com/compose) will be automatically installed. On Linux, make sure you have the latest version of [Compose](https://docs.docker.com/compose/install/).
-
-This solution uses Python, Node.js, .NET, with Redis for messaging and Postgres for storage.
-
-Run in this directory to build and run the app:
-
-```shell
-docker compose up
-```
-
-The `vote` app will be running at [http://localhost:8080](http://localhost:8080), and the `results` will be at [http://localhost:8081](http://localhost:8081).
-
-Alternately, if you want to run it on a [Docker Swarm](https://docs.docker.com/engine/swarm/), first make sure you have a swarm. If you don't, run:
-
-```shell
-docker swarm init
-```
-
-Once you have your swarm, in this directory run:
-
-```shell
-docker stack deploy --compose-file docker-stack.yml vote
-```
-
-## Run the app in Kubernetes
-
-The folder k8s-specifications contains the YAML specifications of the Voting App's services.
-
-Run the following command to create the deployments and services. Note it will create these resources in your current namespace (`default` if you haven't changed it.)
-
-```shell
-kubectl create -f k8s-specifications/
-```
-
-The `vote` web app is then available on port 31000 on each host of the cluster, the `result` web app is available on port 31001.
-
-To remove them, run:
-
-```shell
-kubectl delete -f k8s-specifications/
-```
+A distributed voting application deployed to Amazon EKS using Terraform, Docker, GitHub Actions, and Helm.
 
 ## Architecture
 
-![Architecture diagram](architecture.excalidraw.png)
+```mermaid
+flowchart TD
+    DEV["Developer"] -->|Git push to main| GH["GitHub Repository"]
+    GH --> CI["GitHub Actions CI"]
+    CI --> BUILD["Build Docker Images"]
+    BUILD --> TRIVY["Trivy Security Scan"]
+    TRIVY -->|Commit SHA tags| DH["Docker Hub"]
+    CI -->|Successful workflow| CD["GitHub Actions CD"]
+    CD -->|OIDC authentication| AWS["AWS IAM Role"]
+    AWS --> EKS["Amazon EKS Cluster"]
+    DH -->|Pull images| EKS
 
-* A front-end web app in [Python](/vote) which lets you vote between two options
-* A [Redis](https://hub.docker.com/_/redis/) which collects new votes
-* A [.NET](/worker/) worker which consumes votes and stores them in…
-* A [Postgres](https://hub.docker.com/_/postgres/) database backed by a Docker volume
-* A [Node.js](/result) web app which shows the results of the voting in real time
+    subgraph APP["Voting App on EKS"]
+        VOTE["Vote Service"]
+        REDIS["Redis Queue"]
+        WORKER["Worker"]
+        DB["PostgreSQL Database"]
+        RESULT["Result Service"]
+        VOTE --> REDIS
+        REDIS --> WORKER
+        WORKER --> DB
+        RESULT --> DB
+    end
 
-## Notes
+    EKS --> APP
+    TF["Terraform"] -->|Provision infrastructure| EKS
+    HELM["Helm Chart"] -->|Deploy and rollback| APP
+```
 
-The voting application only accepts one vote per client browser. It does not register additional votes if a vote has already been submitted from a client.
+**Flow:** GitHub Actions builds and scans the application images, publishes commit-tagged images to Docker Hub, and deploys them to EKS using Helm. Terraform provisions the infrastructure, and Helm supports releases and rollback.
 
-This isn't an example of a properly architected perfectly designed distributed app... it's just a simple
-example of the various types of pieces and languages you might see (queues, persistent data, etc), and how to
-deal with them in Docker at a basic level.
+- **Vote:** Python voting interface.
+- **Redis:** Temporary vote queue.
+- **Worker:** Processes votes.
+- **PostgreSQL:** Stores voting results.
+- **Result:** Node.js results interface.
+
+## 1. Run Locally
+
+Requirements: Docker and Docker Compose.
+
+```bash
+docker compose up --build
+```
+
+- Vote: http://localhost:8080
+- Results: http://localhost:8081
+
+Stop with `Ctrl+C`, then run `docker compose down`.
+
+## 2. Provision AWS Infrastructure
+
+Terraform files: `terraform/eks/`
+
+The configuration provisions an Amazon EKS cluster and managed worker nodes in `eu-west-2`, using an existing VPC.
+
+```bash
+cd terraform/eks
+terraform init
+terraform fmt -recursive
+terraform validate
+terraform plan
+terraform apply
+```
+
+Configure kubectl:
+
+```bash
+aws eks update-kubeconfig --name voting-app-eks --region eu-west-2
+kubectl get nodes
+```
+
+Review costs before provisioning. Never commit Terraform state or credentials.
+
+## 3. Continuous Integration (CI)
+
+Workflow: `.github/workflows/voting-app-ci.yml`
+
+On pushes to `main`, GitHub Actions:
+
+1. Builds Vote, Result, and Worker Docker images.
+2. Scans images with Trivy for HIGH and CRITICAL vulnerabilities.
+3. Pushes images to Docker Hub tagged with the commit SHA.
+
+GitHub repository secrets:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+The current Trivy scan reports findings but does not fail the pipeline for them.
+
+## 4. Continuous Deployment (CD)
+
+Workflow: `.github/workflows/deploy-to-eks.yml`
+
+After a successful CI run, the workflow authenticates to AWS using GitHub OIDC, configures kubectl, and deploys the Helm chart with commit-SHA image tags.
+
+GitHub repository secret:
+
+- `AWS_ROLE_ARN`
+
+The AWS role trust policy should remain restricted to this repository and the intended branch.
+
+## 5. Helm Deployment and Rollback
+
+Chart: `helm/voting-app/`
+
+```bash
+helm status voting-app
+helm history voting-app
+kubectl get pods
+```
+
+Deploy or upgrade:
+
+```bash
+helm upgrade --install voting-app ./helm/voting-app \
+  --namespace default --wait --timeout 10m
+```
+
+A deliberately invalid image tag was deployed to test failure recovery. The failed release was successfully rolled back:
+
+```bash
+helm rollback voting-app 4 --wait --timeout 3m
+```
+
+## 6. Live Application
+
+- Vote: http://16.60.166.121:31000
+- Results: http://16.60.166.121:31001
+
+These addresses depend on the current worker node and may change after infrastructure recreation. Restrict NodePort access to trusted IP addresses.
+
+## 7. Cleanup
+
+When screenshots and evidence are saved, remove the Terraform-managed infrastructure to avoid ongoing AWS charges:
+
+```bash
+cd terraform/eks
+terraform destroy
+```
+
+Review the plan before confirming. This takes the application offline.
+
+## Security
+
+- Never commit Terraform state, private keys, credentials, or `.env` files.
+- Use GitHub secrets for credentials and OIDC for AWS deployment.
+- Review Trivy findings and update vulnerable images and dependencies.
+- Restrict public access to Kubernetes NodePorts.
+
+## Original Project
+
+Based on the [Docker Samples Example Voting App](https://github.com/dockersamples/example-voting-app).
