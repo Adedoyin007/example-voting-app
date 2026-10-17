@@ -1,0 +1,61 @@
+name: Deploy Voting App to EKS
+
+on:
+  workflow_run:
+    workflows: ["Voting App CI - Build, Scan and Push"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the commit that passed CI
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name voting-app-eks \
+            --region eu-west-2
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy with Helm
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          helm upgrade --install voting-app ./helm/voting-app \
+            --namespace default \
+            --set-string images.vote.tag="$IMAGE_TAG" \
+            --set-string images.result.tag="$IMAGE_TAG" \
+            --set-string images.worker.tag="$IMAGE_TAG" \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/vote --timeout=180s
+          kubectl rollout status deployment/result --timeout=180s
+          kubectl rollout status deployment/worker --timeout=180s
+          kubectl rollout status deployment/db --timeout=180s
+          kubectl rollout status deployment/redis --timeout=180s
+          kubectl get pods
+          helm status voting-app
