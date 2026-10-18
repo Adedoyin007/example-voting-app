@@ -158,3 +158,38 @@ Review the plan before confirming. This takes the application offline.
 ## Original Project
 
 Based on the [Docker Samples Example Voting App](https://github.com/dockersamples/example-voting-app).
+## Architecture Diagram
+
+The following diagram shows the CI/CD workflow and the application components deployed to Amazon EKS.
+
+![Architecture Diagram](architecture.excalidraw.png)
+
+The editable Mermaid architecture diagram is documented in the Architecture section above.
+
+## Project Evidence
+
+### 1. Voting Application
+
+![Voting Page](screenshots/01-voting-page.png)
+
+![Results Page](screenshots/02-results-page.png)
+
+### 2. Local Docker Compose
+
+![Docker Compose Services](screenshots/03-docker-compose.png)
+
+### 3. Amazon EKS Deployment
+
+![EKS Pods](screenshots/04-eks-pods.png)
+
+![Helm Release Status](screenshots/05-helm-status.png)
+
+### 4. CI/CD Pipeline
+
+![CI Pipeline Success](screenshots/06-ci-success.png)
+
+![CD Pipeline Success](screenshots/07-cd-success.png)
+
+### 5. Helm Rollback Test
+
+![Helm Rollback Evidence](screenshots/08-helm-rollback.png)
