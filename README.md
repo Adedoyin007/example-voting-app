@@ -205,3 +205,20 @@ To verify that the infrastructure can be reproduced, I performed a Terraform des
 5. **Verified the worker node:** After reconnecting `kubectl`, `kubectl get nodes` showed the worker node in the `Ready` state.
 
 **Result:** The Terraform destroy/recreate test succeeded, demonstrating that the EKS infrastructure can be provisioned again from the Terraform configuration.
+### Terraform Test Evidence
+
+**1. Destroyed 36 resources**
+
+![Terraform Destroy Success](screenshots/09-terraform-destroy.png)
+
+**2. Recreated 36 resources**
+
+![Terraform Recreate Success](screenshots/10-terraform-recreate.png)
+
+**3. EKS cluster status: ACTIVE**
+
+![EKS Cluster Active](screenshots/11-eks-active.png)
+
+**4. Worker node status: Ready**
+
+![EKS Worker Node Ready](screenshots/12-eks-node-ready.png)
