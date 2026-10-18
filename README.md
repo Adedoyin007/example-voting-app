@@ -193,3 +193,15 @@ The editable Mermaid architecture diagram is documented in the Architecture sect
 ### 5. Helm Rollback Test
 
 ![Helm Rollback Evidence](screenshots/08-helm-rollback.png)
+
+## Terraform Destroy and Recreate Test
+
+To verify that the infrastructure can be reproduced, I performed a Terraform destroy and recreate test.
+
+1. **Validated the configuration:** `terraform plan` reported no changes before destruction.
+2. **Destroyed the infrastructure:** `terraform plan -destroy -out=destroy.tfplan` generated the destruction plan, and `terraform apply destroy.tfplan` successfully destroyed all 36 Terraform-managed resources.
+3. **Recreated the infrastructure:** `terraform apply` successfully recreated all 36 resources.
+4. **Verified the cluster:** AWS reported the EKS cluster as `ACTIVE` with no health issues.
+5. **Verified the worker node:** After reconnecting `kubectl`, `kubectl get nodes` showed the worker node in the `Ready` state.
+
+**Result:** The Terraform destroy/recreate test succeeded, demonstrating that the EKS infrastructure can be provisioned again from the Terraform configuration.
